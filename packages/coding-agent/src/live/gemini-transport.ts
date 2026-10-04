@@ -14,6 +14,7 @@ const ENDPOINT =
 	"wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
 const CONNECT_TIMEOUT_MS = 20_000;
 const MAX_BUFFERED_AUDIO_BYTES = 1_048_576;
+const UTF8_DECODER = new TextDecoder();
 
 type Playback = Pick<AudioPlayback, "write" | "stop">;
 
@@ -56,7 +57,7 @@ export class GeminiLiveTransport {
 	constructor(options: GeminiLiveTransportOptions) {
 		this.#options = options;
 		// A stop before connect must not create an unhandled rejection.
-		void this.#ready.promise.catch(() => {});
+		void this.#ready.promise.catch(() => undefined);
 	}
 
 	connect(): Promise<void> {
@@ -100,17 +101,17 @@ export class GeminiLiveTransport {
 					},
 					...(this.#options.desktop
 						? [
-								{
-									name: "desktop",
-									description: desktopDescription,
-									behavior: "NON_BLOCKING",
-									parameters: {
-										type: "OBJECT",
-										properties: { code: { type: "STRING" }, read_only: { type: "BOOLEAN" } },
-										required: ["code"],
-									},
+							{
+								name: "desktop",
+								description: desktopDescription,
+								behavior: "NON_BLOCKING",
+								parameters: {
+									type: "OBJECT",
+									properties: { code: { type: "STRING" }, read_only: { type: "BOOLEAN" } },
+									required: ["code"],
 								},
-							]
+							},
+						]
 						: []),
 				];
 				socket.send(
@@ -138,8 +139,12 @@ export class GeminiLiveTransport {
 				.then(async () => {
 					if (this.#closed) return;
 					const data: unknown = event.data;
-					const text = typeof data === "string" ? data : data instanceof Blob ? await data.text() : null;
-					if (text === null) throw new Error("Gemini Live returned an unsupported websocket payload");
+					let text: string;
+					if (typeof data === "string") text = data;
+					else if (data instanceof Blob) text = await data.text();
+					else if (data instanceof ArrayBuffer || ArrayBuffer.isView(data))
+						text = UTF8_DECODER.decode(data as NodeJS.AllowSharedBufferSource);
+					else throw new Error("Gemini Live returned an unsupported websocket payload");
 					this.#handleMessage(JSON.parse(text));
 				})
 				.catch(cause => this.#fail(cause instanceof Error ? cause.message : "Gemini Live message failed"));
