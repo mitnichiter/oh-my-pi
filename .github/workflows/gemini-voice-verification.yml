@@ -116,8 +116,9 @@ jobs:
               cp "$RUNNER_TEMP/controller-fixed.ts" packages/coding-agent/src/live/controller.ts
               cat "$RUNNER_TEMP/controller-before.log"
               test "$status" -ne 0
-              grep -F "Expected:" "$RUNNER_TEMP/controller-before.log"
-              grep -F "Received:" "$RUNNER_TEMP/controller-before.log"
+              grep -F -- "- Expected" "$RUNNER_TEMP/controller-before.log"
+              grep -F -- "+ Received" "$RUNNER_TEMP/controller-before.log"
+              grep -F '"text": ""' "$RUNNER_TEMP/controller-before.log"
          - name: Smoke real binary websocket and controller lifecycle
            run: bun .hosted-voice-tools/.github/scripts/gemini-voice-smoke.ts
          - name: Lint format and type checks
