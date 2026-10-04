@@ -19,10 +19,7 @@ import { SessionManager } from "../src/session/session-manager";
 const OPERATION_TIMEOUT_MS = 30_000;
 const FIXTURE_START_TIMEOUT_MS = 20_000;
 const PERSIST_TIMEOUT_MS = 15_000;
-const ARTIFACT_DIRECTORY = path.join(
-	process.env.RUNNER_TEMP ?? os.tmpdir(),
-	"omp-gemini-live-desktop-artifacts",
-);
+const ARTIFACT_DIRECTORY = path.join(process.env.RUNNER_TEMP ?? os.tmpdir(), "omp-gemini-live-desktop-artifacts");
 const CAPTURE_ARTIFACT = path.join(ARTIFACT_DIRECTORY, "capture.png");
 const FAILURE_ARTIFACT = path.join(ARTIFACT_DIRECTORY, "failure.png");
 
@@ -147,7 +144,10 @@ const fixture = Bun.spawn(
 const fixtureStdout = new Response(fixture.stdout).text();
 const fixtureStderr = new Response(fixture.stderr).text();
 
-async function executeDesktop(code: string, readOnly = false): Promise<{
+async function executeDesktop(
+	code: string,
+	readOnly = false,
+): Promise<{
 	text: string;
 	images: Array<{ data: string; mimeType: string }>;
 }> {
