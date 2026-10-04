@@ -129,7 +129,7 @@ jobs:
            run: bun run ci:test:smoke
          - name: Export remote formatted source on failure
            if: failure()
-           run: bun x --no-install oxfmt packages/coding-agent/src/live/controller.ts packages/coding-agent/src/live/gemini-transport.ts packages/coding-agent/src/live/gemini-wire.ts packages/coding-agent/src/live/settings.ts packages/coding-agent/test/live
+           run: bun x --no-install oxfmt packages/ai/test/provider-registry.test.ts packages/coding-agent/src/live/controller.ts packages/coding-agent/src/live/gemini-transport.ts packages/coding-agent/src/live/gemini-wire.ts packages/coding-agent/src/live/settings.ts packages/coding-agent/test/live packages/coding-agent/test/modes/controllers/live-command-controller.test.ts
          - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
            if: failure()
            with:
@@ -137,6 +137,8 @@ jobs:
               path: |
                  packages/coding-agent/src/live/*.ts
                  packages/coding-agent/test/live/*.ts
+                 packages/coding-agent/test/modes/controllers/live-command-controller.test.ts
+                 packages/ai/test/provider-registry.test.ts
               retention-days: 7
 
    windows:
