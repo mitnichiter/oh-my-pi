@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed Windows desktop typing repeating characters in rich editors such as Notepad.
+
 ## [18.5.1] - 2026-10-03
 
 ### Fixed

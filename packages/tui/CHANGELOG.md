@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- API-key login prompts now mask pasted keys rather than rendering them as ordinary text.
+
 ## [18.5.1] - 2026-10-03
 
 ### Added

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added Google AI Studio API-key import through `/login google`, `omp login google`, and broker login with secret input.
+- Added Gemini Live Extended Thinking voice sessions in `/live` and RPC, with asynchronous coding tasks and opt-in native desktop control.
+
 ## [18.5.1] - 2026-10-03
 
 ### Added

@@ -13,6 +13,11 @@ use super::{
 	window,
 };
 
+/// Time between key transitions and typed UTF-16 units.
+const KEY_GAP: Duration = Duration::from_millis(4);
+/// Extra time after Return while rich editors build a paragraph.
+const ENTER_SETTLE: Duration = Duration::from_millis(20);
+
 pub(super) fn create_global_input() -> CoreResult<Enigo> {
 	use windows_sys::Win32::UI::HiDpi::{
 		DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE, SetThreadDpiAwarenessContext,
@@ -208,7 +213,10 @@ mod background {
 		},
 	};
 
-	use super::{CoreResult, DesktopError, KeyName, Modifiers, MouseButton, PointerEvent};
+	use super::{
+		CoreResult, DesktopError, ENTER_SETTLE, KEY_GAP, KeyName, Modifiers, MouseButton,
+		PointerEvent,
+	};
 	use crate::desktop::win32::{
 		ax::Win32Ax,
 		delivery::{
@@ -231,10 +239,6 @@ mod background {
 	const CLICK_GAP: Duration = Duration::from_millis(80);
 	/// Time between posted drag moves.
 	const DRAG_STEP: Duration = Duration::from_millis(16);
-	/// Time between posted key transitions and typed characters.
-	const KEY_GAP: Duration = Duration::from_millis(4);
-	/// Extra time after a posted Return while rich editors build a paragraph.
-	const ENTER_SETTLE: Duration = Duration::from_millis(20);
 
 	pub(super) fn hwnd(id: &str) -> CoreResult<HWND> {
 		let address = id
@@ -785,7 +789,8 @@ mod foreground {
 	};
 
 	use super::{
-		CoreResult, DesktopError, KeyName, Modifiers, MouseButton, PointerEvent, background,
+		CoreResult, DesktopError, ENTER_SETTLE, KEY_GAP, KeyName, Modifiers, MouseButton,
+		PointerEvent, background,
 	};
 	use crate::desktop::win32::{
 		delivery::{TextUnit, text_units},
@@ -1280,25 +1285,31 @@ mod foreground {
 	}
 
 	pub(super) fn type_text(id: &str, text: &str) -> CoreResult<()> {
-		let mut events = Vec::with_capacity(text.len().saturating_mul(2));
-		for unit in text_units(text) {
-			match unit {
-				TextUnit::Enter => {
-					events.extend([key_event(VK_RETURN, false), key_event(VK_RETURN, true)]);
-				},
-				TextUnit::Char(character) => {
-					let mut units = [0; 2];
-					for &unit in character.encode_utf16(&mut units).iter() {
-						events.extend([unicode_event(unit, false), unicode_event(unit, true)]);
-					}
-				},
-			}
-		}
 		background::ensure_text_supported(id, background::hwnd(id)?)?;
-		if events.is_empty() {
+		if text.is_empty() {
 			return Ok(());
 		}
-		ForegroundGuard::activate(id, KEY_SETTLE)?.run(|target| send_to(target, &events))
+		ForegroundGuard::activate(id, KEY_SETTLE)?.run(|target| {
+			// Rich Windows editors can repeat the last VK_PACKET character when
+			// a whole string is queued before they consume the Unicode input.
+			// Pace character-sized batches, rechecking focus before every send.
+			for unit in text_units(text) {
+				match unit {
+					TextUnit::Enter => {
+						send_to(target, &[key_event(VK_RETURN, false), key_event(VK_RETURN, true)])?;
+						thread::sleep(KEY_GAP + ENTER_SETTLE);
+					},
+					TextUnit::Char(character) => {
+						let mut units = [0; 2];
+						for &unit in character.encode_utf16(&mut units).iter() {
+							send_to(target, &[unicode_event(unit, false), unicode_event(unit, true)])?;
+							thread::sleep(KEY_GAP);
+						}
+					},
+				}
+			}
+			Ok(())
+		})
 	}
 
 	#[cfg(test)]

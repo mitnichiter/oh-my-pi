@@ -33,6 +33,39 @@ Anthropic-family models and transports whose compatibility metadata disables ori
 
 `tools.approvalMode: write` allows inspection helpers (window listing, screenshots, AX reads, clipboard reads) and `computer.run` calls declared with `read_only: true`; it prompts for input and mutation helpers. An explicit `tools.approval.computer: allow | prompt | deny` overrides the mode.
 
+## Gemini Live desktop access
+
+`/live` can use Gemini for voice conversation and native desktop automation. Import a Google AI Studio key with `/login google` or `omp login google`, then configure:
+
+```yaml
+live:
+  provider: google
+  google:
+    model: gemini-3.8-live-extended-thinking
+    voice: Aoede
+    thinkingLevel: high
+  computer: true
+
+computer:
+  enabled: true
+
+tools:
+  approval:
+    computer: allow
+```
+
+Both `live.computer` and `computer.enabled` must be enabled; both are checked on each desktop call. Desktop access is disabled by default. Starting interactive Live with desktop access enabled warns that requested screenshots are sent to Google and input acts on real applications. Screenshots are captured on demand, not continuously streamed.
+
+The live `desktop` function runs asynchronous JavaScript using the same native computer prelude, coordinate frames, accessibility references, output limits, and timeout/cancellation rules as Eval. Read-only calls use the normal read approval tier and block desktop facade mutations. Explicit `tools.approval.computer: deny` blocks access; `prompt` fails closed because Live's direct desktop calls do not open a tool approval dialog. Use `allow` only when you intend to grant desktop control, preferably in a dedicated account or VM. Disabling either setting revokes subsequent calls. Ending Live closes its desktop worker.
+
+The realtime model remains connected during background reasoning and desktop/coding work. Audio `turnComplete` is not treated as completion of an asynchronous task; matching function results are returned when execution finishes. Voice, microphone mute, spoken transcripts, and delegated coding work use the existing Live surface. Codex remains the default `live.provider`; its `live.voice` setting is unchanged.
+
+### Hosted verification and Windows builds
+
+The `Hosted verification` GitHub Actions workflow runs on `verify/**` branch pushes and manual dispatch. It uses GitHub-hosted runners, builds source-matched Linux and Windows native addons, checks TypeScript and Rust contracts, exercises Gemini Live against an owned Windows GUI fixture, and compiles a standalone Windows executable. It does not require private runners or a Gemini API key.
+
+Download `omp-windows-x64-gemini-live` from a successful workflow run for the executable. `windows-gemini-live-desktop-screenshots` contains capture evidence. The desktop smoke uses an isolated loopback websocket, not Google's service; real microphone/speaker and Google account access still require running `/live` with your own key.
+
 ## Eval API and execution model
 
 The `computer` global exposes direct helpers from JavaScript or Python Eval. Each helper runs one approved call in the persistent desktop session and returns a real structured value:
