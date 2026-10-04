@@ -1,6 +1,9 @@
 name: Gemini voice verification
 
 on:
+   push:
+      branches: ["verify/gemini-voice-ci"]
+      paths: [".github/workflows/gemini-voice-verification.yml"]
    workflow_dispatch:
       inputs:
          source_ref:
@@ -34,12 +37,12 @@ jobs:
       name: Build unchanged upstream native addons
       runs-on: ubuntu-22.04
       timeout-minutes: 90
-      if: inputs.native_run == ''
+      if: (inputs.native_run || vars.HOSTED_VOICE_NATIVE_RUN) == ''
       steps:
          - uses: actions/checkout@v4
            with:
               repository: can1357/oh-my-pi
-              ref: ${{ inputs.native_ref }}
+              ref: ${{ inputs.native_ref || '6d8552d7f9df1852826923f07f0eed4fe29511f3' }}
          - uses: ./.github/actions/bun-install
          - uses: ./.github/actions/bazel-natives
            with:
@@ -68,18 +71,18 @@ jobs:
       runs-on: ubuntu-22.04
       timeout-minutes: 40
       needs: native_addons
-      if: always() && !inputs.native_only && (needs.native_addons.result == 'success' || (needs.native_addons.result == 'skipped' && inputs.native_run != ''))
+      if: always() && !inputs.native_only && (inputs.source_ref || vars.HOSTED_VOICE_REF) != '' && (needs.native_addons.result == 'success' || (needs.native_addons.result == 'skipped' && (inputs.native_run || vars.HOSTED_VOICE_NATIVE_RUN) != ''))
       steps:
          - uses: actions/checkout@v4
            with:
-              ref: ${{ inputs.source_ref }}
+              ref: ${{ inputs.source_ref || vars.HOSTED_VOICE_REF }}
          - uses: ./.github/actions/bun-install
          - name: Check native artifact source agreement
            shell: bash
            env:
               GH_TOKEN: ${{ github.token }}
-              SOURCE: ${{ inputs.native_ref }}
-              NATIVE_RUN: ${{ inputs.native_run }}
+              SOURCE: ${{ inputs.native_ref || '6d8552d7f9df1852826923f07f0eed4fe29511f3' }}
+              NATIVE_RUN: ${{ inputs.native_run || vars.HOSTED_VOICE_NATIVE_RUN }}
            run: |
               set -euo pipefail
               git fetch --no-tags https://github.com/can1357/oh-my-pi.git "$SOURCE"
@@ -90,7 +93,7 @@ jobs:
          - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
            with:
               github-token: ${{ github.token }}
-              run-id: ${{ inputs.native_run || github.run_id }}
+              run-id: ${{ inputs.native_run || vars.HOSTED_VOICE_NATIVE_RUN || github.run_id }}
               name: voice-native-addons
               path: packages/natives/native
          - name: Lint format and type checks
@@ -116,17 +119,17 @@ jobs:
       runs-on: windows-2025
       timeout-minutes: 45
       needs: native_addons
-      if: always() && !inputs.native_only && (needs.native_addons.result == 'success' || (needs.native_addons.result == 'skipped' && inputs.native_run != ''))
+      if: always() && !inputs.native_only && (inputs.source_ref || vars.HOSTED_VOICE_REF) != '' && (needs.native_addons.result == 'success' || (needs.native_addons.result == 'skipped' && (inputs.native_run || vars.HOSTED_VOICE_NATIVE_RUN) != ''))
       steps:
          - uses: actions/checkout@v4
            with:
-              ref: ${{ inputs.source_ref }}
+              ref: ${{ inputs.source_ref || vars.HOSTED_VOICE_REF }}
          - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
          - uses: ./.github/actions/bun-install
          - name: Check native source agreement
            shell: bash
            env:
-              SOURCE: ${{ inputs.native_ref }}
+              SOURCE: ${{ inputs.native_ref || '6d8552d7f9df1852826923f07f0eed4fe29511f3' }}
            run: |
               set -euo pipefail
               git fetch --no-tags https://github.com/can1357/oh-my-pi.git "$SOURCE"
@@ -134,7 +137,7 @@ jobs:
          - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
            with:
               github-token: ${{ github.token }}
-              run-id: ${{ inputs.native_run || github.run_id }}
+              run-id: ${{ inputs.native_run || vars.HOSTED_VOICE_NATIVE_RUN || github.run_id }}
               name: voice-native-addons
               path: packages/natives/native
          - name: Focused voice and auth regressions
