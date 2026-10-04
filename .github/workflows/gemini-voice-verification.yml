@@ -96,6 +96,30 @@ jobs:
               run-id: ${{ inputs.native_run || vars.HOSTED_VOICE_NATIVE_RUN || github.run_id }}
               name: voice-native-addons
               path: packages/natives/native
+         - name: Load fork-only smoke tooling
+           uses: actions/checkout@v4
+           with:
+              ref: verify/gemini-voice-ci
+              path: .hosted-voice-tools
+              sparse-checkout: .github/scripts
+              sparse-checkout-cone-mode: false
+         - name: Prove cancellation regression fails before fix
+           shell: bash
+           run: |
+              set -euo pipefail
+              cp packages/coding-agent/src/live/controller.ts "$RUNNER_TEMP/controller-fixed.ts"
+              cp .hosted-voice-tools/.github/scripts/controller-before.ts packages/coding-agent/src/live/controller.ts
+              set +e
+              bun test packages/coding-agent/test/live/controller.test.ts --test-name-pattern "never attributes" > "$RUNNER_TEMP/controller-before.log" 2>&1
+              status=$?
+              set -e
+              cp "$RUNNER_TEMP/controller-fixed.ts" packages/coding-agent/src/live/controller.ts
+              cat "$RUNNER_TEMP/controller-before.log"
+              test "$status" -ne 0
+              grep -F "Expected:" "$RUNNER_TEMP/controller-before.log"
+              grep -F "Received:" "$RUNNER_TEMP/controller-before.log"
+         - name: Smoke real binary websocket and controller lifecycle
+           run: bun .hosted-voice-tools/.github/scripts/gemini-voice-smoke.ts
          - name: Lint format and type checks
            run: bun run ci:check:full
          - name: Focused voice and auth regressions
@@ -140,6 +164,15 @@ jobs:
               run-id: ${{ inputs.native_run || vars.HOSTED_VOICE_NATIVE_RUN || github.run_id }}
               name: voice-native-addons
               path: packages/natives/native
+         - name: Load fork-only smoke tooling
+           uses: actions/checkout@v4
+           with:
+              ref: verify/gemini-voice-ci
+              path: .hosted-voice-tools
+              sparse-checkout: .github/scripts
+              sparse-checkout-cone-mode: false
+         - name: Smoke real binary websocket and controller lifecycle
+           run: bun .hosted-voice-tools/.github/scripts/gemini-voice-smoke.ts
          - name: Focused voice and auth regressions
            run: bun test packages/ai/test/provider-registry.test.ts packages/coding-agent/test/live packages/coding-agent/test/rpc-live.test.ts packages/coding-agent/test/modes/controllers/live-command-controller.test.ts
          - name: Source CLI and embedded worker smoke
