@@ -15,6 +15,16 @@ const ENDPOINT =
 const CONNECT_TIMEOUT_MS = 20_000;
 const MAX_BUFFERED_AUDIO_BYTES = 1_048_576;
 const UTF8_DECODER = new TextDecoder();
+const DESKTOP_FUNCTION = {
+	name: "desktop",
+	description: desktopDescription,
+	behavior: "NON_BLOCKING",
+	parameters: {
+		type: "OBJECT",
+		properties: { code: { type: "STRING" }, read_only: { type: "BOOLEAN" } },
+		required: ["code"],
+	},
+};
 
 type Playback = Pick<AudioPlayback, "write" | "stop">;
 
@@ -99,20 +109,7 @@ export class GeminiLiveTransport {
 						behavior: "NON_BLOCKING",
 						parameters: { type: "OBJECT", properties: { request: { type: "STRING" } }, required: ["request"] },
 					},
-					...(this.#options.desktop
-						? [
-							{
-								name: "desktop",
-								description: desktopDescription,
-								behavior: "NON_BLOCKING",
-								parameters: {
-									type: "OBJECT",
-									properties: { code: { type: "STRING" }, read_only: { type: "BOOLEAN" } },
-									required: ["code"],
-								},
-							},
-						]
-						: []),
+					...(this.#options.desktop ? [DESKTOP_FUNCTION] : []),
 				];
 				socket.send(
 					JSON.stringify({
