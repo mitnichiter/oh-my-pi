@@ -79,7 +79,7 @@ const server = Bun.serve({
 		},
 		message(socket, data) {
 			const packet = JSON.parse(String(data)) as WireReply;
-			if (packet.setup) socket.send(JSON.stringify({ setupComplete: {} }));
+			if (packet.setup) socket.send(Buffer.from(JSON.stringify({ setupComplete: {} })));
 			if (packet.realtimeInput?.video) videos.push(packet.realtimeInput.video);
 			for (const response of packet.toolResponse?.functionResponses ?? []) {
 				replies.get(response.id)?.resolve(response.response);
@@ -157,9 +157,11 @@ async function executeDesktop(
 	const firstVideo = videos.length;
 	const socket = await withTimeout(accepted.promise, OPERATION_TIMEOUT_MS, "Loopback websocket was not accepted");
 	socket.send(
-		JSON.stringify({
-			toolCall: { functionCalls: [{ id, name: "desktop", args: { code, read_only: readOnly } }] },
-		}),
+		Buffer.from(
+			JSON.stringify({
+				toolCall: { functionCalls: [{ id, name: "desktop", args: { code, read_only: readOnly } }] },
+			}),
+		),
 	);
 	try {
 		const response = await withTimeout(pending.promise, OPERATION_TIMEOUT_MS, "Live desktop response timed out");

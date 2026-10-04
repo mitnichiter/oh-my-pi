@@ -21,7 +21,7 @@ class Inbox<T> {
 	}
 }
 
-async function harness() {
+async function harness(binaryType?: "arraybuffer" | "nodebuffer") {
 	const incoming = new Inbox<unknown>();
 	const events = new Inbox<LiveServerEvent>();
 	const played = new Inbox<Float32Array>();
@@ -43,7 +43,8 @@ async function harness() {
 				incoming.push(JSON.parse(String(data)) as unknown);
 				if (!setupReceived) {
 					setupReceived = true;
-					socket.send(JSON.stringify({ setupComplete: {} }));
+					const reply = JSON.stringify({ setupComplete: {} });
+					socket.send(binaryType ? Buffer.from(reply) : reply);
 				}
 			},
 		},
@@ -58,9 +59,13 @@ async function harness() {
 		voice: "Aoede",
 		thinkingLevel: "high",
 		instructions: "Local protocol test",
-		createSocket: () => new WebSocket(`ws://127.0.0.1:${server.port}`),
+		createSocket: () => {
+			const socket = new WebSocket(`ws://127.0.0.1:${server.port}`);
+			if (binaryType === "arraybuffer") socket.binaryType = "arraybuffer";
+			return socket;
+		},
 		createPlayback: () => ({ write: samples => played.push(samples), stop: () => stopped.push() }),
-		callbacks: { onEvent: event => events.push(event), onOutputLevel: () => {} },
+		callbacks: { onEvent: event => events.push(event), onOutputLevel: () => undefined },
 	});
 	try {
 		await transport.connect();
@@ -91,6 +96,24 @@ async function harness() {
 const audioInput = type({ realtimeInput: { audio: { data: "string", mimeType: "string" } } });
 
 describe("Gemini Live websocket", () => {
+	test.each(["nodebuffer", "arraybuffer"] as const)(
+		"binary %s replies complete setup and decode Unicode transcripts",
+		async binaryType => {
+			const h = await harness(binaryType);
+			try {
+				const packet = { serverContent: { inputTranscription: { text: "café 漢字 😀" } } };
+				h.peer.send(Buffer.from(JSON.stringify(packet)));
+				expect(await h.events.next()).toEqual({ type: "transcript.started", role: "user" });
+				expect(await h.events.next()).toEqual({
+					type: "input_transcript.added",
+					item: { text: "café 漢字 😀" },
+				});
+			} finally {
+				await h.close();
+			}
+		},
+	);
+
 	test("microphone PCM is clipped/encoded; mute ends input; barge-in drops queued playback", async () => {
 		const h = await harness();
 		try {
