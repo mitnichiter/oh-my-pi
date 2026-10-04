@@ -49,7 +49,9 @@ public static class OmpGeminiLiveDesktopEditor
             {
                 form.Activate();
                 editor.Focus();
+                Console.WriteLine("Owned editor shown in Windows session {0}", Process.GetCurrentProcess().SessionId);
                 File.WriteAllText(readyPath, Process.GetCurrentProcess().Id.ToString(), utf8);
+                Console.WriteLine("Owned editor readiness written: {0}", readyPath);
             };
             form.Controls.Add(editor);
             form.Controls.Add(label);

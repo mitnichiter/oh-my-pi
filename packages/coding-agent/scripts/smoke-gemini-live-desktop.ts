@@ -58,7 +58,6 @@ const tempDir = await TempDir.create("omp-gemini-live-desktop-");
 const title = `OMP Gemini Live desktop smoke ${crypto.randomUUID()}`;
 const outputFile = tempDir.join("editor-output.txt");
 const readyFile = tempDir.join("fixture-ready.txt");
-const readyMarker = Bun.file(readyFile);
 const persistedOutput = Bun.file(outputFile);
 const fixtureScript = path.join(import.meta.dir, "fixtures", "gemini-live-desktop-editor.ps1");
 const marker = "OMP Gemini Live — café 漢字 😀\nsecond line: λ 🚀";
@@ -117,7 +116,7 @@ const transport = new GeminiLiveTransport({
 			if (event.type !== "error") return;
 			for (const pending of replies.values()) pending.reject(new Error(event.message));
 		},
-		onOutputLevel() { },
+		onOutputLevel: () => undefined,
 	},
 });
 
@@ -177,7 +176,13 @@ try {
 			if (fixture.exitCode !== null) {
 				throw new Error(`GUI fixture exited before becoming ready (exit ${fixture.exitCode})`);
 			}
-			return readyMarker.exists();
+			try {
+				await fs.access(readyFile);
+				return true;
+			} catch (error) {
+				if (isEnoent(error)) return false;
+				throw error;
+			}
 		},
 		FIXTURE_START_TIMEOUT_MS,
 		"Windows GUI fixture did not become ready",
@@ -281,7 +286,9 @@ return {coordinateFrame: {width: shot.width, height: shot.height}, click: {x, y}
 		try {
 			await Bun.write(FAILURE_ARTIFACT, Buffer.from(latestVideo.data, "base64"));
 			console.error(`Failure screenshot: ${FAILURE_ARTIFACT}`);
-		} catch { }
+		} catch (error) {
+			console.error("Could not save the desktop failure screenshot", error);
+		}
 	}
 } finally {
 	for (const pending of replies.values()) pending.reject(new Error("Desktop smoke is shutting down"));
