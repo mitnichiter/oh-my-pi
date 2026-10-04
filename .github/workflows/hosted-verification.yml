@@ -26,23 +26,57 @@ jobs:
       steps:
          - uses: actions/checkout@v4
          - uses: ./.github/actions/bun-install
+         - name: Find source-matched verified native artifacts
+           id: reuse
+           env:
+              GH_TOKEN: ${{ github.token }}
+              GH_REPO: ${{ github.repository }}
+              NATIVE_RUN_ID: ${{ vars.HOSTED_NATIVE_REUSE_RUN }}
+           run: |
+              echo "verified=false" >> "$GITHUB_OUTPUT"
+              if [[ ! "$NATIVE_RUN_ID" =~ ^[0-9]+$ ]] || [ "$NATIVE_RUN_ID" = "$GITHUB_RUN_ID" ]; then exit 0; fi
+              passed=$(gh api "repos/$GH_REPO/actions/runs/$NATIVE_RUN_ID/jobs?per_page=100" --jq '[.jobs[] | select(.name == "Build hosted native addons" and .conclusion == "success")] | length')
+              available=$(gh api "repos/$GH_REPO/actions/runs/$NATIVE_RUN_ID/artifacts" --jq '[.artifacts[] | select(.name == "hosted-native-addons" and .expired == false)] | length')
+              if [ "$passed" != 1 ] || [ "$available" != 1 ]; then exit 0; fi
+              source=$(gh api "repos/$GH_REPO/actions/runs/$NATIVE_RUN_ID" --jq .head_sha)
+              git fetch --no-tags --depth=1 origin "$source"
+              if git diff --quiet "$source" HEAD -- \
+                Cargo.toml Cargo.lock MODULE.bazel MODULE.bazel.lock BUILD.bazel \
+                rust-toolchain.toml rustfmt.toml .bazelrc .bazelignore .bazelversion \
+                .cargo bazel crates package.json bun.lock packages/natives \
+                scripts/bazel-natives.ts scripts/host-detect.ts scripts/stamp-native-version.ts \
+                .github/actions/bazel-natives .github/actions/bazel-cache; then
+                echo "verified=true" >> "$GITHUB_OUTPUT"
+                echo "Reusing source-matched native artifacts and Rust validation from run $NATIVE_RUN_ID ($source)."
+              fi
+         - name: Download source-matched native artifacts
+           if: steps.reuse.outputs.verified == 'true'
+           uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+           with:
+              github-token: ${{ github.token }}
+              run-id: ${{ vars.HOSTED_NATIVE_REUSE_RUN }}
+              name: hosted-native-addons
+              path: packages/natives/native
 
          # Build one addon per Bazel invocation: each link peaks at several GiB
          # of RAM, while the persistent Bazel server still shares analysis and
          # cached actions between invocations.
          - name: Build Linux baseline addon from source
+           if: steps.reuse.outputs.verified != 'true'
            uses: ./.github/actions/bazel-natives
            with:
               targets: linux-x64-baseline
               cache-scope: hosted-verification
               save: "false"
          - name: Build Linux modern addon from source
+           if: steps.reuse.outputs.verified != 'true'
            uses: ./.github/actions/bazel-natives
            with:
               targets: linux-x64-modern
               cache-scope: hosted-verification
               save: "false"
          - name: Cross-build Windows baseline addon from source
+           if: steps.reuse.outputs.verified != 'true'
            uses: ./.github/actions/bazel-natives
            with:
               targets: win32-x64-baseline
@@ -51,14 +85,17 @@ jobs:
 
          # Reuse the Bazel server and source graph warmed by the addon build.
          - id: rust-cache
+           if: steps.reuse.outputs.verified != 'true'
            uses: ./.github/actions/bazel-cache
            with:
               scope: hosted-verification
          - name: Test Rust workspace
+           if: steps.reuse.outputs.verified != 'true'
            run: |
               if [ "$(ulimit -Sn)" != unlimited ] && [ "$(ulimit -Sn)" -lt 65536 ]; then ulimit -Sn 65536 || true; fi
               bazelisk --bazelrc="${{ steps.rust-cache.outputs.rc }}" test //crates/...
          - name: Check Rust formatting
+           if: steps.reuse.outputs.verified != 'true'
            run: bazelisk --bazelrc="${{ steps.rust-cache.outputs.rc }}" build --config=rustfmt //crates/...
 
          - name: Upload hosted native addons
@@ -85,6 +122,17 @@ jobs:
 
          - name: Lint, format, and type check TypeScript
            run: bun run ci:check:full
+         - name: Export remote formatter output on failure
+           if: failure()
+           run: bun x --no-install oxfmt packages/coding-agent/scripts/smoke-gemini-live-desktop.ts
+         - name: Upload formatted smoke source
+           if: failure()
+           uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+           with:
+              name: formatted-gemini-live-smoke
+              path: packages/coding-agent/scripts/smoke-gemini-live-desktop.ts
+              if-no-files-found: error
+              retention-days: 1
 
          - name: Verify focused Gemini Live and desktop contracts
            run: |

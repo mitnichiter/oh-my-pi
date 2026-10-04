@@ -66,6 +66,8 @@ The `Hosted verification` GitHub Actions workflow runs on `verify/**` branch pus
 
 Download `omp-windows-x64-gemini-live` from a successful workflow run for the executable. `windows-gemini-live-desktop-screenshots` contains capture evidence. The desktop smoke uses an isolated loopback websocket, not Google's service; real microphone/speaker and Google account access still require running `/live` with your own key.
 
+To reuse a successful native-build job for TypeScript-only iterations, set the repository Actions variable `HOSTED_NATIVE_REUSE_RUN` to that run ID. The workflow checks the native job result, artifact expiry, and native source/build inputs before reuse; changed native inputs trigger a fresh build.
+
 ## Eval API and execution model
 
 The `computer` global exposes direct helpers from JavaScript or Python Eval. Each helper runs one approved call in the persistent desktop session and returns a real structured value:
