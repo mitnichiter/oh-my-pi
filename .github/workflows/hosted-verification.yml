@@ -176,7 +176,7 @@ jobs:
 
          - name: Compile standalone Windows executable
            env:
-              RELEASE_TARGETS: windows-x64
+              RELEASE_TARGETS: win32-x64
            run: bun run ci:release:build-binaries
          - name: Smoke compiled executable and embedded workers
            shell: pwsh

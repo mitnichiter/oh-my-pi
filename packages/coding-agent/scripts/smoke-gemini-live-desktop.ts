@@ -21,6 +21,7 @@ const FIXTURE_START_TIMEOUT_MS = 20_000;
 const PERSIST_TIMEOUT_MS = 15_000;
 const ARTIFACT_DIRECTORY = path.join(process.env.RUNNER_TEMP ?? os.tmpdir(), "omp-gemini-live-desktop-artifacts");
 const CAPTURE_ARTIFACT = path.join(ARTIFACT_DIRECTORY, "capture.png");
+const TYPED_ARTIFACT = path.join(ARTIFACT_DIRECTORY, "typed.png");
 const FAILURE_ARTIFACT = path.join(ARTIFACT_DIRECTORY, "failure.png");
 
 interface WireReply {
@@ -252,6 +253,16 @@ return {coordinateFrame: {width: shot.width, height: shot.height}, click: {x, y}
 		throw new Error(`Persisted editor text mismatch: ${JSON.stringify(persisted)}`);
 	}
 
+	const typedCapture = await executeDesktop(
+		`const fixture = await desktop.window({title: ${selector}});
+await fixture.screenshot();
+return {title: fixture.title};`,
+		true,
+	);
+	const typedVideo = typedCapture.images.at(-1);
+	if (typedVideo?.mimeType !== "image/png") throw new Error("Typed editor screenshot was not delivered over Live");
+	await Bun.write(TYPED_ARTIFACT, Buffer.from(typedVideo.data, "base64"));
+
 	await withTimeout(transport.close(), OPERATION_TIMEOUT_MS, "Desktop worker teardown timed out");
 	let rejection: unknown;
 	try {
@@ -276,6 +287,7 @@ return {coordinateFrame: {width: shot.width, height: shot.height}, click: {x, y}
 			path: "loopback websocket -> GeminiLiveTransport -> approved desktop prelude -> native Windows GUI",
 			capture: { mimeType: captureVideo.mimeType, width, height, artifact: CAPTURE_ARTIFACT },
 			persistedText: persisted,
+			typedArtifact: TYPED_ARTIFACT,
 			teardown: "transport close disposed the worker and rejected further actions",
 		}),
 	);
