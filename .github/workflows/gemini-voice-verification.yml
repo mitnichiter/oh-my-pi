@@ -1,0 +1,160 @@
+name: Gemini voice verification
+
+on:
+   workflow_dispatch:
+      inputs:
+         source_ref:
+            description: Exact voice submission commit to verify
+            required: true
+            type: string
+         native_ref:
+            description: Upstream base commit whose unchanged native sources are built
+            required: true
+            default: 6d8552d7f9df1852826923f07f0eed4fe29511f3
+            type: string
+         native_run:
+            description: Successful native-only run to reuse, empty builds from source
+            required: false
+            type: string
+         native_only:
+            description: Build native artifacts without the voice verification jobs
+            default: false
+            type: boolean
+
+permissions:
+   contents: read
+   actions: read
+
+env:
+   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+   OMP_TEST_TIMEOUT: "120"
+
+jobs:
+   native_addons:
+      name: Build unchanged upstream native addons
+      runs-on: ubuntu-22.04
+      timeout-minutes: 90
+      if: inputs.native_run == ''
+      steps:
+         - uses: actions/checkout@v4
+           with:
+              repository: can1357/oh-my-pi
+              ref: ${{ inputs.native_ref }}
+         - uses: ./.github/actions/bun-install
+         - uses: ./.github/actions/bazel-natives
+           with:
+              targets: linux-x64-baseline
+              cache-scope: hosted-verification
+              save: "false"
+         - uses: ./.github/actions/bazel-natives
+           with:
+              targets: linux-x64-modern
+              cache-scope: hosted-verification
+              save: "false"
+         - uses: ./.github/actions/bazel-natives
+           with:
+              targets: win32-x64-baseline
+              cache-scope: hosted-verification
+              save: "false"
+         - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+           with:
+              name: voice-native-addons
+              path: packages/natives/native/*.node
+              if-no-files-found: error
+              retention-days: 7
+
+   linux:
+      name: Linux voice verification
+      runs-on: ubuntu-22.04
+      timeout-minutes: 40
+      needs: native_addons
+      if: always() && !inputs.native_only && (needs.native_addons.result == 'success' || (needs.native_addons.result == 'skipped' && inputs.native_run != ''))
+      steps:
+         - uses: actions/checkout@v4
+           with:
+              ref: ${{ inputs.source_ref }}
+         - uses: ./.github/actions/bun-install
+         - name: Check native artifact source agreement
+           shell: bash
+           env:
+              GH_TOKEN: ${{ github.token }}
+              SOURCE: ${{ inputs.native_ref }}
+              NATIVE_RUN: ${{ inputs.native_run }}
+           run: |
+              set -euo pipefail
+              git fetch --no-tags https://github.com/can1357/oh-my-pi.git "$SOURCE"
+              git diff --exit-code "$SOURCE" HEAD -- Cargo.toml Cargo.lock MODULE.bazel MODULE.bazel.lock BUILD.bazel rust-toolchain.toml rustfmt.toml .bazelrc .bazelignore .bazelversion .cargo bazel crates packages/natives package.json bun.lock scripts/bazel-natives.ts scripts/host-detect.ts scripts/stamp-native-version.ts .github/actions/bazel-natives .github/actions/bazel-cache
+              if [ -n "$NATIVE_RUN" ]; then
+                test "$(gh api "repos/${{ github.repository }}/actions/runs/$NATIVE_RUN/jobs?per_page=100" --jq '[.jobs[] | select(.name == "Build unchanged upstream native addons" and .conclusion == "success")] | length')" = 1
+              fi
+         - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+           with:
+              github-token: ${{ github.token }}
+              run-id: ${{ inputs.native_run || github.run_id }}
+              name: voice-native-addons
+              path: packages/natives/native
+         - name: Lint format and type checks
+           run: bun run ci:check:full
+         - name: Focused voice and auth regressions
+           run: bun test packages/ai/test/provider-registry.test.ts packages/catalog/test/compat-compile.test.ts packages/coding-agent/test/live packages/coding-agent/test/rpc-live.test.ts packages/coding-agent/test/modes/controllers/live-command-controller.test.ts
+         - name: Source CLI and embedded worker smoke
+           run: bun run ci:test:smoke
+         - name: Export remote formatted source on failure
+           if: failure()
+           run: bun x --no-install oxfmt packages/coding-agent/src/live/controller.ts packages/coding-agent/src/live/gemini-transport.ts packages/coding-agent/src/live/gemini-wire.ts packages/coding-agent/src/live/settings.ts packages/coding-agent/test/live
+         - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+           if: failure()
+           with:
+              name: formatted-voice-source
+              path: |
+                 packages/coding-agent/src/live/*.ts
+                 packages/coding-agent/test/live/*.ts
+              retention-days: 7
+
+   windows:
+      name: Windows voice verification and executable
+      runs-on: windows-2025
+      timeout-minutes: 45
+      needs: native_addons
+      if: always() && !inputs.native_only && (needs.native_addons.result == 'success' || (needs.native_addons.result == 'skipped' && inputs.native_run != ''))
+      steps:
+         - uses: actions/checkout@v4
+           with:
+              ref: ${{ inputs.source_ref }}
+         - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+         - uses: ./.github/actions/bun-install
+         - name: Check native source agreement
+           shell: bash
+           env:
+              SOURCE: ${{ inputs.native_ref }}
+           run: |
+              set -euo pipefail
+              git fetch --no-tags https://github.com/can1357/oh-my-pi.git "$SOURCE"
+              git diff --exit-code "$SOURCE" HEAD -- Cargo.toml Cargo.lock MODULE.bazel MODULE.bazel.lock BUILD.bazel rust-toolchain.toml rustfmt.toml .bazelrc .bazelignore .bazelversion .cargo bazel crates packages/natives package.json bun.lock scripts/bazel-natives.ts scripts/host-detect.ts scripts/stamp-native-version.ts .github/actions/bazel-natives .github/actions/bazel-cache
+         - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+           with:
+              github-token: ${{ github.token }}
+              run-id: ${{ inputs.native_run || github.run_id }}
+              name: voice-native-addons
+              path: packages/natives/native
+         - name: Focused voice and auth regressions
+           run: bun test packages/ai/test/provider-registry.test.ts packages/coding-agent/test/live packages/coding-agent/test/rpc-live.test.ts packages/coding-agent/test/modes/controllers/live-command-controller.test.ts
+         - name: Source CLI and embedded worker smoke
+           run: bun run ci:test:smoke
+         - name: Compile standalone executable
+           env:
+              RELEASE_TARGETS: win32-x64
+           run: bun run ci:release:build-binaries
+         - name: Smoke compiled executable and embedded workers
+           shell: pwsh
+           run: |
+              & "packages/coding-agent/binaries/omp-windows-x64.exe" --version
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              & "packages/coding-agent/binaries/omp-windows-x64.exe" --smoke-test
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+         - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+           with:
+              name: omp-windows-x64-gemini-voice
+              path: packages/coding-agent/binaries/omp-windows-x64.exe
+              if-no-files-found: error
+              retention-days: 7
